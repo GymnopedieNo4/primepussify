@@ -6,7 +6,7 @@ try {
 
 function init() {
   var customOptionsConfig = {
-    settingsName: "PrimePuss",
+    settingsName: "PrimePuss2",
     valueName: "VarianceSizes"
   };
   var historyBeforePussification = app.activeDocument.activeHistoryState;
@@ -14,19 +14,21 @@ function init() {
   // UI
   var uiWindow = new Window("dialog", "Prime Pussify controls");
   // Make a big window to allow for a comfortable space for fine tuning with slider knobs
-  uiWindow.preferredSize = { width: 800, height: 300 };
+  uiWindow.preferredSize = { width: 500, height: 300 };
   uiWindow.alignChildren = "fill";
 
   /*
     We have two set of values based on how they obtain their initial values:
-    1. OrigSize and OrigTracking which are set to whatever their values happen to be at time of the invocation
-    2. SizeVariance, TrackVariance and BaselineVariance which are set based on the previous session stored values
+    1. OrigSize is set to whatever their values happen to be at time of the invocation
+    2. SizeVariance, TrackVariance, BaselineMinimum and BaselineMaximum which are set based on the previous session stored values
   */
   var OrigSize = activeDocument.activeLayer.textItem.size.value;
-  var OrigTracking = activeDocument.activeLayer.textItem.tracking;
+  var OrigTracking = 0;
   var SizeVariance = 0;
   var TrackVariance = 0;
-  var BaselineVariance = 0;
+  var BaselineMinimum = 0;
+  var BaselineMaximum = 0;
+  var CompensationFactor = 100;
   try {
     var vv = app
       .getCustomOptions(customOptionsConfig.settingsName)
@@ -34,22 +36,26 @@ function init() {
       .split(",");
     SizeVariance = vv[0];
     TrackVariance = vv[1];
-    BaselineVariance = vv[2];
+    BaselineMinimum = vv[2];
+	BaselineMaximum = vv[3]
   } catch (err) {}
 
   // Font Size
   uiWindow.add('statictext {text: "Font Size:", justify: "center"}');
-  var sizeSlider = createSlider("Size: ", 6, 72, OrigSize);
-  var sizeVarianceSlider = createSlider("Size vary:", 0, 72, SizeVariance);
+  var sizeSlider = createSlider("Size: ", 2, 256, OrigSize);
+  var sizeVarianceSlider = createSlider("Size vary:", 0, 128, SizeVariance);
 
   // Character Tracking
   uiWindow.add('statictext {text: "Character Tracking:",justify: "center"}');
-  var trackSlider = createSlider("Track: ", -100, 200, OrigTracking);
-  var trackVarianceSlider = createSlider("Track vary: ", 0, 200, TrackVariance);
+  var trackSlider = createSlider("Track: ", -150, 300, OrigTracking);
+  var trackVarianceSlider = createSlider("Track vary: ", 0, 100, TrackVariance);
 
   // Baseline
   uiWindow.add('statictext {text: "Baseline:",justify: "center"}');
-  var baselineVarianceSlider = createSlider("Baseline vary:", 0, 20, BaselineVariance, 2);
+  var baselineMinimumSlider = createSlider("Baseline min:", 0, 50, BaselineMinimum);
+  var baselineMaximumSlider = createSlider("Baseline max:", 0, 100, BaselineMaximum);
+  uiWindow.add('statictext {text: "Tracking compensation for baseline shift, vary between fonts.",justify: "left"}');
+  var baselineCompensationFactor = createSlider("Comp. factor:", 0, 300, CompensationFactor);
 
   // UI Buttons
   var buttons = uiWindow.add("group");
@@ -71,12 +77,12 @@ function init() {
     var g = uiWindow.add("group");
 
     // Label
-    g.add("statictext", [0, 0, 90, 20], label);
+    g.add("statictext", [0, 0, 70, 20], label);
 
     // Slider track
     var slider = g.add(
       "slider",
-      [0, 0, 600, 10],
+      [0, 0, 400, 10],
       startValue,
       minValue,
       maxValue
@@ -93,7 +99,7 @@ function init() {
     // Slider input field value
     var textValue = g.add("edittext", undefined, startValue);
     textValue.justify = "right";
-    textValue.characters = 6; // width of the input field
+    textValue.characters = 5; // width of the input field
     textValue.addEventListener("changing", updateSlider);
     // Enable keyboard arrows control
     textValue.addEventListener("keyup", function (key) {
@@ -124,7 +130,9 @@ function init() {
       sizeVarianceSlider.value,
       trackSlider.value,
       trackVarianceSlider.value,
-      baselineVarianceSlider.value
+      baselineMinimumSlider.value,
+	  baselineMaximumSlider.value,
+	  baselineCompensationFactor.value
     );
   }
 
@@ -135,14 +143,15 @@ function init() {
       [
         sizeVarianceSlider.value,
         trackVarianceSlider.value,
-        baselineVarianceSlider.value
+        baselineMinimumSlider.value,
+		baselineMaximumSlider.value
       ].join(",")
     );
     app.putCustomOptions(customOptionsConfig.settingsName, d0, true);
   }
 }
 
-function prime_puss(OrigSize, SizeVariance, OrigTracking, TrackVariance, BaselineVariance)
+function prime_puss(OrigSize, SizeVariance, OrigTracking, TrackVariance, BaselineMinimum, BaselineMaximum, CompensationFactor)
 {
     var doc = app.activeDocument;
     var t = doc.activeLayer.textItem;
@@ -161,14 +170,19 @@ function prime_puss(OrigSize, SizeVariance, OrigTracking, TrackVariance, Baselin
     var d1 = new ActionDescriptor();
     var list1 = new ActionList();
 
-    for(var i=0; i < t.contents.length; i++)
+    // Tracking rely on baseline from previous loop (next/right character), initiated here
+	var prevBaseline = 0
+	for(var i=t.contents.length; i > 0; i--)
     {
-        var from = i;
+        var from = i-1;
         var len = 1;
         var size = OrigSize + (Math.random() * SizeVariance) - (SizeVariance/2);
-        var baseline = OrigBaseline + (Math.random() * BaselineVariance) - (BaselineVariance/2);
-        var tracking = OrigTracking + (Math.random() * TrackVariance) - (TrackVariance/2);
-
+		var PlusOrMinus = Math.random() < 0.5 ? -1 : 1;
+		// Alternative in case above is not working.
+		// var PlusOrMinus = Math.round(Math.random()) * 2 - 1;
+		var baseline = OrigBaseline + Math.floor(Math.random() * (BaselineMaximum - BaselineMinimum + 1) + BaselineMinimum) * PlusOrMinus;
+		var trackingCompensation = (baseline - prevBaseline) * CompensationFactor * 0.007;
+		var tracking = OrigTracking + (Math.random() * TrackVariance) - (TrackVariance/2) + trackingCompensation;
         tracking *= 0.001;
 
         var d2 = new ActionDescriptor();
@@ -186,6 +200,9 @@ function prime_puss(OrigSize, SizeVariance, OrigTracking, TrackVariance, Baselin
         d3.putObject(stringIDToTypeID("color"), stringIDToTypeID("RGBColor"), d4);
         d2.putObject(stringIDToTypeID("textStyle"), stringIDToTypeID("textStyle"), d3);
         list1.putObject(stringIDToTypeID("textStyleRange"), d2);
+
+		// Calculating the tracking for next loop using current loop baseline shift
+		prevBaseline = baseline
     }
 
     d1.putList(stringIDToTypeID("textStyleRange"), list1);
