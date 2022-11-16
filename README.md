@@ -18,3 +18,14 @@ Ideally, there would be an interface in Photoshop that would just have these val
 Happy drawing,
 
 \- Casey
+
+## What's different in this fork
+* Ranges between minimum and maximum possible values of **Font Size, Tracking & Baseline** are increased further.
+* Fine-tune your **Baseline vary** with **Baseline minimum value & Baseline maximum value** now, better geared towards SFX.
+* Includes tracking compensation to reduce poor kerning due to high baseline differences between each characters.
+* **`uiWindow.preferredSize`** width is reduced to smallest possible maximize your screen real estate.
+* **Settings variables** is stored under `PrimePuss2` to allows interchangeability with the original **PrimePussify** without affecting each other. (Rename the `PrimePussify.jsx` file if you want to use both of them together.)
+
+## To do
+* Improve the script performance by preventing unnecessary calculations when 'vary' value of Size, Tracking or Baseline is 0.
+* Minimum & maximum values fine-tuning for other parameters as well (Font size & tracking).
